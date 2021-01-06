@@ -442,16 +442,16 @@ subTrain %&gt;%
 </div>
 <div id="model-training-and-prediction" class="section level1">
 <h1>Model training and prediction</h1>
-<p>Model training is done using the <em>doParallel</em> package to reduce processing time. The <em>penalized discriminant analysis</em> (<strong>pda</strong>), <em>naive Bayes’</em> (<strong>nb</strong>), <em>stochastic gradient boosting</em> (<strong>gbm</strong>) and <em>random forest</em> (<strong>rf</strong>) methods are trained with the <em>cleaned</em>, <em>scaled</em> and <em>centered</em> data shown previously in the matrix plot. The out of sample error for each trained model is then estimated with the yet untouched <em>subTest</em> dataset. Finally, the 20 cases from the <em>testing</em> dataset are predicted with each model seperately.</p>
+<p>Model training is done using the <em>doParallel</em> package to reduce processing time. The <em>penalized discriminant analysis</em> (<strong>pda</strong>), <em>naive Bayes’</em> (<strong>nb</strong>), <em>stochastic gradient boosting</em> (<strong>gbm</strong>) and <em>random forest</em> (<strong>rf</strong>) methods are trained with the <em>cleaned</em>, <em>scaled</em> and <em>centered</em> data shown previously in the matrix plot. For model training and error estimation <strong>crossvalidation</strong> was used. The out of sample error for each trained model is then estimated with the yet untouched <em>subTest</em> dataset. Finally, the 20 cases from the <em>testing</em> dataset are predicted with each model seperately.</p>
 <pre class="r"><code># preparing for parallel computing
 cl &lt;- makePSOCKcluster(detectCores(logical = F))
 registerDoParallel(cl)
 
 # training
-m.pda   &lt;- train(classe~., data = subTrain, method = &quot;pda&quot;, preProcess = c(&quot;center&quot;, &quot;scale&quot;))
-m.nb &lt;- train(classe~., data = subTrain, method = &quot;naive_bayes&quot;, preProcess = c(&quot;center&quot;, &quot;scale&quot;))
-m.gbm   &lt;- train(classe~., data = subTrain, method = &quot;gbm&quot;, verbose = F, preProcess = c(&quot;center&quot;, &quot;scale&quot;))
-m.rf    &lt;- train(classe~., data = subTrain, method = &quot;rf&quot;, preProcess = c(&quot;center&quot;, &quot;scale&quot;)) 
+m.pda   &lt;- train(classe~., data = subTrain, method = &quot;pda&quot;, preProcess = c(&quot;center&quot;, &quot;scale&quot;), trControl = trainControl(method = &quot;cv&quot;, classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10))
+m.nb &lt;- train(classe~., data = subTrain, method = &quot;naive_bayes&quot;, preProcess = c(&quot;center&quot;, &quot;scale&quot;), trControl = trainControl(method = &quot;cv&quot;, classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10))
+m.gbm   &lt;- train(classe~., data = subTrain, method = &quot;gbm&quot;, verbose = F, preProcess = c(&quot;center&quot;, &quot;scale&quot;), trControl = trainControl(method = &quot;cv&quot;, classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10))
+m.rf    &lt;- train(classe~., data = subTrain, method = &quot;rf&quot;, preProcess = c(&quot;center&quot;, &quot;scale&quot;), trControl = trainControl(method = &quot;cv&quot;, classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10)) 
 stopCluster(cl) 
 
 
@@ -482,10 +482,10 @@ pred &lt;- data.frame(X = testing$X, user_name = testing$user_name,
 as.data.frame(t(rbind(round(model.accuracy, digit = 4) , pred[,3:6])))</code></pre>
 <pre><code>##     Accuracy 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20
 ## nb    0.7634 C A A A A C D C A  A  A  A  B  A  E  B  A  B  D  B
-## pda   0.7023 B A B A A C D D A  A  D  A  B  A  E  A  A  B  B  B
-## gbm   0.9884 B A B A A E D B A  A  B  C  B  A  E  E  A  B  B  B
-## rf    0.9977 B A B A A E D B A  A  B  C  B  A  E  E  A  B  B  B</code></pre>
-<p>As seen in output table, the random forest method is the most accurate with the lowest out of sample error of <span class="math inline">\(1 - Accuracy = 0.23 \%\)</span>. Hence, for final prediction the outcome of the random forest prediction is recommended.</p>
+## pda   0.7024 B A B A A C D D A  A  D  A  B  A  E  A  A  B  B  B
+## gbm   0.9885 B A B A A E D B A  A  B  C  B  A  E  E  A  B  B  B
+## rf    0.9975 B A B A A E D B A  A  B  C  B  A  E  E  A  B  B  B</code></pre>
+<p>As seen in output table, the random forest method is the most accurate with the lowest out of sample error of <span class="math inline">\(1 - Accuracy = 0.25 \%\)</span>. Hence, for final prediction the outcome of the random forest prediction is recommended.</p>
 </div>
 
 

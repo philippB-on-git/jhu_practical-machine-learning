@@ -94,7 +94,7 @@ subTrain %>%
 ```
 
 # Model training and prediction
-Model training is done using the *doParallel* package to reduce processing time. The *penalized discriminant analysis* (**pda**), *naive Bayes'* (**nb**), *stochastic gradient boosting* (**gbm**) and *random forest* (**rf**) methods are trained with the *cleaned*, *scaled* and *centered* data shown previously in the matrix plot. The out of sample error for each trained model is then estimated with the yet untouched *subTest* dataset. Finally, the 20 cases from the *testing* dataset are predicted with each model seperately. 
+Model training is done using the *doParallel* package to reduce processing time. The *penalized discriminant analysis* (**pda**), *naive Bayes'* (**nb**), *stochastic gradient boosting* (**gbm**) and *random forest* (**rf**) methods are trained with the *cleaned*, *scaled* and *centered* data shown previously in the matrix plot. For model training and error estimation **crossvalidation** was used. The out of sample error for each trained model is then estimated with the yet untouched *subTest* dataset. Finally, the 20 cases from the *testing* dataset are predicted with each model seperately. 
 
 ```{r message=FALSE, warning=FALSE, cache=TRUE}
 # preparing for parallel computing
@@ -102,10 +102,10 @@ cl <- makePSOCKcluster(detectCores(logical = F))
 registerDoParallel(cl)
 
 # training
-m.pda   <- train(classe~., data = subTrain, method = "pda", preProcess = c("center", "scale"))
-m.nb <- train(classe~., data = subTrain, method = "naive_bayes", preProcess = c("center", "scale"))
-m.gbm   <- train(classe~., data = subTrain, method = "gbm", verbose = F, preProcess = c("center", "scale"))
-m.rf    <- train(classe~., data = subTrain, method = "rf", preProcess = c("center", "scale")) 
+m.pda   <- train(classe~., data = subTrain, method = "pda", preProcess = c("center", "scale"), trControl = trainControl(method = "cv", classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10))
+m.nb <- train(classe~., data = subTrain, method = "naive_bayes", preProcess = c("center", "scale"), trControl = trainControl(method = "cv", classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10))
+m.gbm   <- train(classe~., data = subTrain, method = "gbm", verbose = F, preProcess = c("center", "scale"), trControl = trainControl(method = "cv", classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10))
+m.rf    <- train(classe~., data = subTrain, method = "rf", preProcess = c("center", "scale"), trControl = trainControl(method = "cv", classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE, number = 10)) 
 stopCluster(cl) 
 
 
