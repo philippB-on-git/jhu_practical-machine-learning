@@ -1,0 +1,139 @@
+---
+title: "Practical Machine Learning -Assignment"
+author: "Philipp B."
+date: "2021-01-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.path = "figure/fig-")
+#knitr::opts_chunk$set(dev = 'pdf')
+Sys.setlocale(category = "LC_ALL", locale = "english")
+```
+
+# Overview
+In this assignment, weight lifting data gathered from fitness and health devices is used to predict the *classe* parameter, quantifying the quality of the workout.
+
+The WLE data was provided by Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. (http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.; see also: http://groupware.les.inf.puc-rio.br/har#ixzz3xsbS5bVX)
+
+# Preparation
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr, warn.conflicts = F)
+library(tidyr, warn.conflicts = F)
+library(ggplot2, warn.conflicts = F)
+library(ggridges, warn.conflicts = F)
+library(lattice, warn.conflicts = F)
+library(caret, warn.conflicts = F)
+library(doParallel, warn.conflicts = F)
+
+set.seed(1337)
+
+# read data
+if (!exists("training"))
+    training <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+
+if (!exists("testing"))
+    testing  <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+```
+
+After loading the data, some data cleaning and preparation is done. Assuming the *classe* outcome is not depending on time, i.e. it shows no time trend, all time-related columns are excluded for further analysis. Furthermore, all factor variables are  reclassified as such.
+
+In the next step, all zero or near-zero columns are removed. Following that, information redundancy in the dataset is reduced by removing highly correlated columns.
+
+```{r, warning=FALSE, message=FALSE}
+# clean column classes
+training.char <- training %>% select(which(sapply(., class) =="character"), 
+                                     -c(user_name, new_window, classe, cvtd_timestamp))
+testing.char  <- testing  %>% select(which(sapply(., class) =="character"), 
+                                     -c(user_name, new_window, cvtd_timestamp))
+
+for (i in names(training.char)) training[, i] <- as.numeric(training[, i])
+for (i in names(testing.char)) testing[, i] <- as.numeric(testing[, i])
+
+training$classe <- as.factor(training$classe)
+
+# removing near zero and zero columns
+training <- training %>% 
+    select(-nearZeroVar(.), user_name, classe)
+
+# removing highly correlated columns and columns related to time
+training.highcor <- training %>%
+    select_if(is.numeric) %>%
+    select_if(sapply(., FUN=function(x) sum(is.na(x))) == 0) %>%
+    cor() %>%
+    findCorrelation(., names=T, exact = T)
+training <- training %>%
+    select(-training.highcor, -c(X, raw_timestamp_part_1, raw_timestamp_part_2,
+                                 cvtd_timestamp))
+
+# removing NA columns
+training <-training %>% 
+    select_if(sapply(., FUN=function(x) sum(is.na(x))) == 0)
+
+# sub-split training set into train and test
+inTrain  <- createDataPartition(training$classe, p = 0.6, list = F)
+subTrain <- training[inTrain, ]
+subTest  <- training[-inTrain, ]
+```
+
+All columns containig lots of missing values are removed before  the *training* dataset is split into the actual training set, called *subTrain*, and a testing dataset for estimating the out of sample error, called *subTest*.
+
+In a short exploratory analysis via a pairwise correlation in a matrix plot, the remaining *centered* and *z-scaled* data is examined, indicating no obvious issues for model training.
+
+```{r, warning=FALSE, message=FALSE, fig.width=8, fig.asp=1.5, fig.align="center", out.width="100%"}
+# exploratory analysis
+subTrain %>% 
+    predict(preProcess(., method = c("scale", "center")), .) %>%
+    gather(key = "param", value = "value", -c(user_name, classe)) %>%
+    ggplot(., aes(x = value, y = user_name, fill = classe, col = classe)) +
+        geom_density_ridges(scale = 0.9, alpha = 0.3, rel_min_height=0.005) +
+        facet_wrap(~ param) + 
+        theme(text = element_text(size=10))
+```
+
+# Model training and prediction
+Model training is done using the *doParallel* package to reduce processing time. The *penalized discriminant analysis* (**pda**), *naive Bayes'* (**nb**), *stochastic gradient boosting* (**gbm**) and *random forest* (**rf**) methods are trained with the *cleaned*, *scaled* and *centered* data shown previously in the matrix plot. The out of sample error for each trained model is then estimated with the yet untouched *subTest* dataset. Finally, the 20 cases from the *testing* dataset are predicted with each model seperately. 
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+# preparing for parallel computing
+cl <- makePSOCKcluster(detectCores(logical = F))
+registerDoParallel(cl)
+
+# training
+m.pda   <- train(classe~., data = subTrain, method = "pda", preProcess = c("center", "scale"))
+m.nb <- train(classe~., data = subTrain, method = "naive_bayes", preProcess = c("center", "scale"))
+m.gbm   <- train(classe~., data = subTrain, method = "gbm", verbose = F, preProcess = c("center", "scale"))
+m.rf    <- train(classe~., data = subTrain, method = "rf", preProcess = c("center", "scale")) 
+stopCluster(cl) 
+
+
+# estimating out of sample error via validation set subTest
+p.pda   <- predict(m.pda, newdata = subTest)
+p.nb    <- predict(m.nb, newdata = subTest)
+p.gbm   <- predict(m.gbm, newdata = subTest)
+p.rf    <- predict(m.rf, newdata = subTest)
+
+
+a.nb    <- confusionMatrix(p.nb, subTest$classe)
+a.pda   <- confusionMatrix(p.pda, subTest$classe)
+a.gbm   <- confusionMatrix(p.gbm, subTest$classe)
+a.rf    <- confusionMatrix(p.rf, subTest$classe)
+
+model.accuracy <- data.frame(nb = a.nb$overall["Accuracy"], 
+                             pda = a.pda$overall["Accuracy"], 
+                             gbm = a.gbm$overall["Accuracy"],
+                             rf = a.rf$overall["Accuracy"])
+
+# prediction with testing set
+pred <- data.frame(X = testing$X, user_name = testing$user_name,
+                   nb = predict(m.nb, newdata = testing),
+                   pda = predict(m.pda, newdata = testing),
+                   gbm = predict(m.gbm, newdata = testing),
+                   rf = predict(m.rf, newdata = testing))
+
+as.data.frame(t(rbind(round(model.accuracy, digit = 4) , pred[,3:6])))
+```
+
+As seen in output table, the random forest method is the most accurate with the lowest out of sample error of $1 - Accuracy = `r round(1- a.rf$overall["Accuracy"], digits=4) * 100` \%$. Hence, for final prediction the outcome of the random forest prediction is recommended.
